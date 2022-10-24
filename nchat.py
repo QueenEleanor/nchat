@@ -7,12 +7,17 @@ import re
 
 
 class User:
+    name:      str
+    msg_queue: queue.Queue
+
     def __init__(self, username: str):
         self.name      = username
         self.msg_queue = queue.Queue()
 
 
 class Userlist:
+    users: list
+
     def __init__(self):
         self.users = []
 
@@ -84,7 +89,7 @@ def conn_handler(conn: socket.socket) -> None:
     
     buf = conn.recv(128)     
 
-    out = re.findall(b"\x1b\[(\d+);(\d+)R", buf)
+    out = re.findall(b"\x1b\\[(\\d+);(\\d+)R", buf)
     if len(out) != 1:
         return
     scr_height, scr_width = out[0]
@@ -117,7 +122,6 @@ def conn_handler(conn: socket.socket) -> None:
         print(f"removed user {username} from userlist")
     else:
         print(f"{username} left")
-
 
 
 def conn_hander_wrapper(conn: socket.socket) -> None:
