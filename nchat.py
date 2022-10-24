@@ -58,17 +58,19 @@ def validate_username(username: bytes) -> tuple[bool, str]:
         if byte not in ALLOWED_USERNAME_CHARS:
             return (False, f"Username contains illegal byte '{hex(byte)}'. Allowed characters are: [A-z0-9-_.]\n")
 
+    uusername = username.decode("utf-8")
+
     for val in CLAIMED_USERNAMES:
-        if val == username:
+        if val == uusername:
             return (False, "Username is claimed by the server\n")
 
-    if userlist.check_exists(username):
+    if userlist.check_exists(uusername):
         return (False, "Username is already in use\n")
 
-    if not username:
+    if not uusername:
         return (False, "Username must not be empty\n")
 
-    if len(username) > MAX_USERNAME_LEN:
+    if len(uusername) > MAX_USERNAME_LEN:
         return (False, "Username is too long\n")
 
     return (True, "")
