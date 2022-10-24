@@ -1,6 +1,6 @@
 #!/bin/python3
 from io import BufferedRWPair
-import socket
+from socket import socket, AF_INET, SOCK_STREAM
 import threading
 import queue
 import argparse
@@ -103,7 +103,7 @@ def validate_username(username: bytes) -> tuple[bool, str]:
     return (True, "")
 
 
-def conn_handler(conn: socket.socket, cf: BufferedRWPair) -> None:
+def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     cf.write(
         b"Press enter to continue. [DO NOT INSERT OR REMOVE TEXT]"
     +   b"\x1b[9999;9999H[\x1b[6n"
@@ -159,7 +159,7 @@ def conn_handler(conn: socket.socket, cf: BufferedRWPair) -> None:
         print(f"{username} left")
 
 
-def conn_hander_wrapper(conn: socket.socket) -> None:
+def conn_hander_wrapper(conn: socket) -> None:
     cf = conn.makefile("rwb")
 
     if options.debug:
@@ -195,7 +195,7 @@ def parse_args():
 def main():
     parse_args()
     
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    with socket(AF_INET, SOCK_STREAM) as s:
         s.bind(("", options.port))
         s.listen(MAX_USERS)
 
