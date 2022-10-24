@@ -39,22 +39,30 @@ class Userlist:
                 self.users.pop(i)
                 return
 
+    def get(self, username: str) -> User:
+        for user in self.users:
+            if user.name == username:
+                return user
+        raise ValueError("User does not exist.")
+
     def sendall(self, msg: str) -> None:
         for user in self.users:
             user.msg_queue.put(msg)
 
 
 class options:
-    port      : int
-    debug     : bool
+    port  : int
+    debug : bool
 
 userlist = Userlist()
 
 
 ALLOWED_USERNAME_CHARS = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_."
+ALLOWED_MSG_CHARS      = r"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~ ".encode("utf-8")
 
 MAX_USERS        = 16
 MAX_USERNAME_LEN = 20
+MAX_MSG_LEN      = 256
 
 CLAIMED_USERNAMES = ["[SERVER]"]
 
@@ -143,20 +151,58 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
             continue
         break
     username = buf.decode("utf-8")
+
     userlist.add(username)
+    user = userlist.get(username)
 
     if options.debug:
-        print(f"added user {username} to userlist")
-    else:
-        print(f"{username} joined")
+        print(f"added user {user.name} to userlist")
+    userlist.sendall(
+        f"[SERVER]: {user.name} joined! Welcome! :D\n"
+    )
 
-    #
+    conn.setblocking(False)
+    buf = b""
+    while True:
+        if not user.msg_queue.empty():
+            msg = user.msg_queue.get()
+            cf.write(msg.encode("utf-8"))
+            if safe_flush(cf) != 0:
+                break
 
-    userlist.remove(username)
+        b = cf.read(1)
+        if b == b"": # EOF
+            break
+        if b is None:
+            continue
+
+        buf += b
+        if b"\n" in buf:
+            buf = buf[:-1] # remove trailing newline
+            for byte in buf:
+                if byte not in ALLOWED_MSG_CHARS:
+                    userlist.sendall(
+                        f"[SERVER]: {user.name} tried to send"
+                    +   f"disallowed byte '{hex(byte)}' but"
+                    +    "i blocked it! >:D"
+                    )
+                    buf = b""
+                    continue
+
+            msg = buf.decode("utf-8")
+            msg = msg[:MAX_MSG_LEN]
+            userlist.sendall(
+                f"{user.name}: {msg}\n"
+            )
+            buf = b""
+
+    userlist.sendall(
+        f"[SERVER]: {user.name} left. bye. :c\n"
+    )
     if options.debug:
-        print(f"removed user {username} from userlist")
-    else:
-        print(f"{username} left")
+        print(f"removed user {user.name} from userlist")
+
+    userlist.remove(user.name)
 
 
 def conn_hander_wrapper(conn: socket) -> None:
