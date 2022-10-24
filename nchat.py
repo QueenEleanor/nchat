@@ -210,7 +210,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     userlist.remove(user.name)
 
 
-def conn_hander_wrapper(conn: socket) -> None:
+def conn_handler_wrapper(conn: socket) -> None:
     cf = conn.makefile("rwb")
 
     if options.debug:
@@ -282,7 +282,7 @@ def main():
         
         while True:
             conn, _ = s.accept()
-            threading.Thread(target=conn_hander_wrapper, args=(conn,)).start()
+            threading.Thread(target=conn_handler_wrapper, args=(conn,)).start()
 
 
 if __name__ == "__main__":
