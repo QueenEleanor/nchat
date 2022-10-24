@@ -130,7 +130,8 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     scr_height, scr_width = int(scr_height), int(scr_width)
 
     cf.write(b"\x1b[2J\x1b[H")
-    cf.write(options.welcome_msg.encode("utf-8") + b"\n")
+    if options.welcome_msg:
+        cf.write(options.welcome_msg.encode("utf-8") + b"\n")
     if safe_flush(cf) != 0:
         return
 
@@ -183,16 +184,20 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
 
         buf += b
         if b"\n" in buf:
+            success = True
             buf = buf[:-1] # remove trailing newline
             for byte in buf:
                 if byte not in ALLOWED_MSG_CHARS:
                     userlist.sendall(
-                        f"[SERVER]: {user.name} tried to send"
-                    +   f"disallowed byte '{hex(byte)}' but"
-                    +    "i blocked it! >:D"
+                        f"[SERVER]: {user.name} tried to send "
+                    +   f"disallowed byte '{hex(byte)}' but "
+                    +    "i blocked it! >:D\n"
                     )
                     buf = b""
-                    continue
+                    success = False
+            
+            if not success:
+                continue
 
             msg = buf.decode("utf-8")
             msg = msg[:options.max_msg_len]
