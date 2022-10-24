@@ -1,4 +1,5 @@
 #!/bin/python3
+from io import BufferedRWPair
 import socket
 import threading
 import queue
@@ -58,6 +59,27 @@ MAX_USERNAME_LEN = 20
 CLAIMED_USERNAMES = ["[SERVER]"]
 
 
+def safe_flush(cf: BufferedRWPair) -> int:
+    try:
+        cf.flush()
+    except BrokenPipeError:
+        return -1
+    return 0
+
+
+def readuntil(cf: BufferedRWPair, end: bytes) -> bytes:
+    buf = b""
+    while True:
+        b = cf.read(1)
+
+        if b == b"":
+            return b"EOF"
+        
+        buf += b
+        if end in buf:
+            return buf
+
+
 def validate_username(username: bytes) -> tuple[bool, str]:
     for byte in username:
         if byte not in ALLOWED_USERNAME_CHARS:
@@ -81,13 +103,17 @@ def validate_username(username: bytes) -> tuple[bool, str]:
     return (True, "")
 
 
-def conn_handler(conn: socket.socket) -> None:
-    conn.send(
+def conn_handler(conn: socket.socket, cf: BufferedRWPair) -> None:
+    cf.write(
         b"Press enter to continue. [DO NOT INSERT OR REMOVE TEXT]"
     +   b"\x1b[9999;9999H[\x1b[6n"
     )
+    if safe_flush(cf) != 0:
+        return
     
-    buf = conn.recv(128)     
+    buf = readuntil(cf, b"\n")
+    if buf == b"EOF":
+        return
 
     out = re.findall(b"\x1b\\[(\\d+);(\\d+)R", buf)
     if len(out) != 1:
@@ -95,19 +121,28 @@ def conn_handler(conn: socket.socket) -> None:
     scr_height, scr_width = out[0]
     scr_height, scr_width = int(scr_height), int(scr_width)
 
-    conn.send(b"\x1b[2J\x1b[H")
+    cf.write(b"\x1b[2J\x1b[H")
+    if safe_flush(cf) != 0:
+        return
 
     while True:
-        conn.send(b"Session username: ")
-        username = conn.recv(256)[:-1]
+        cf.write(b"Session username: ")
+        if safe_flush(cf) != 0:
+            return
 
-        print(username)
-        success, err = validate_username(username)
+        buf = readuntil(cf, b"\n")
+        if buf == b"EOF":
+            return
+
+        buf = buf[:-1] # remove trailing newline
+        success, err = validate_username(buf)
         if not success:
-            conn.send(err.encode("utf-8"))
+            cf.write(err.encode("utf-8"))
+            if safe_flush(cf) != 0:
+                return
             continue
         break
-    username = username.decode("utf-8")
+    username = buf.decode("utf-8")
     userlist.add(username)
 
     if options.debug:
@@ -125,16 +160,17 @@ def conn_handler(conn: socket.socket) -> None:
 
 
 def conn_hander_wrapper(conn: socket.socket) -> None:
+    cf = conn.makefile("rwb")
+
     if options.debug:
         print(f"Started connection; {conn}")
 
-    try: 
-        conn_handler(conn)
-    except BrokenPipeError:
-        pass # connection closed
+    conn_handler(conn, cf)
 
     if options.debug:
         print(f"Closing connection; {conn}")
+
+    cf.close()
     conn.close()
 
 
