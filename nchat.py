@@ -8,7 +8,7 @@ import re
 
 
 class User:
-    name:      str
+    name: str
     msg_queue: queue.Queue
 
     def __init__(self, username: str):
@@ -51,18 +51,18 @@ class Userlist:
 
 
 class options:
-    port  : int
+    port : int
     debug : bool
+    welcome_msg : str
+    max_users : int
+    max_username_len : int
+    max_msg_len : int
 
 userlist = Userlist()
 
 
 ALLOWED_USERNAME_CHARS = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_."
 ALLOWED_MSG_CHARS      = r"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~ ".encode("utf-8")
-
-MAX_USERS        = 16
-MAX_USERNAME_LEN = 20
-MAX_MSG_LEN      = 256
 
 CLAIMED_USERNAMES = ["[SERVER]"]
 
@@ -91,7 +91,7 @@ def readuntil(cf: BufferedRWPair, end: bytes) -> bytes:
 def validate_username(username: bytes) -> tuple[bool, str]:
     for byte in username:
         if byte not in ALLOWED_USERNAME_CHARS:
-            return (False, f"Username contains illegal byte '{hex(byte)}'. Allowed characters are: [A-z0-9-_.]\n")
+            return (False, f"Username contains illegal byte '{hex(byte)}'.\n Allowed characters are: [A-z0-9-_.]\n")
 
     uusername = username.decode("utf-8")
 
@@ -105,7 +105,7 @@ def validate_username(username: bytes) -> tuple[bool, str]:
     if not uusername:
         return (False, "Username must not be empty\n")
 
-    if len(uusername) > MAX_USERNAME_LEN:
+    if len(uusername) > options.max_username_len:
         return (False, "Username is too long\n")
 
     return (True, "")
@@ -130,6 +130,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     scr_height, scr_width = int(scr_height), int(scr_width)
 
     cf.write(b"\x1b[2J\x1b[H")
+    cf.write(options.welcome_msg.encode("utf-8") + b"\n")
     if safe_flush(cf) != 0:
         return
 
@@ -161,6 +162,10 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
         f"[SERVER]: {user.name} joined! Welcome! :D\n"
     )
 
+    cf.write(b"\x1b[2J\x1b[H")
+    if safe_flush(cf) != 0:
+        return
+
     conn.setblocking(False)
     buf = b""
     while True:
@@ -190,7 +195,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
                     continue
 
             msg = buf.decode("utf-8")
-            msg = msg[:MAX_MSG_LEN]
+            msg = msg[:options.max_msg_len]
             userlist.sendall(
                 f"{user.name}: {msg}\n"
             )
@@ -224,7 +229,7 @@ def parse_args():
     parser = argparse.ArgumentParser("nchat")
     parser.add_argument(
         "port", 
-        help="The port which the server listens on",
+        help="The port that the server listens on",
         type=int, 
     )
     parser.add_argument(
@@ -232,10 +237,38 @@ def parse_args():
         help="Show debug output while running the server",
         action="store_true",
     )
+    parser.add_argument(
+        "-w", "--welcome-message",
+        help="The message users get sent on connection",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--max-users",
+        help="Set the maximum number of concurrent users",
+        type=int,
+        default=16,
+    )
+    parser.add_argument(
+        "--max-username-length",
+        help="Set the maximum length of usernames",
+        type=int,
+        default=20,
+    )
+    parser.add_argument(
+        "--max-message-length",
+        help="Set the maximum length of messages",
+        type=int,
+        default=256,
+    )
     args = parser.parse_args()
 
-    options.port  = args.port
-    options.debug = args.debug
+    options.port             = args.port
+    options.debug            = args.debug
+    options.welcome_msg      = args.welcome_message
+    options.max_users        = args.max_users
+    options.max_username_len = args.max_username_length
+    options.max_msg_len      = args.max_message_length
     
 
 def main():
@@ -243,7 +276,7 @@ def main():
     
     with socket(AF_INET, SOCK_STREAM) as s:
         s.bind(("", options.port))
-        s.listen(MAX_USERS)
+        s.listen(options.max_users)
 
         print("Server is listening...")
         
