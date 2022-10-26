@@ -160,19 +160,45 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     if options.debug:
         print(f"added user {user.name} to userlist")
     userlist.sendall(
-        f"[SERVER]: {user.name} joined! Welcome! :D\n"
+        f"[SERVER]: {user.name} joined! Welcome! :D"
     )
 
     cf.write(b"\x1b[2J\x1b[H")
+    cf.write(f"\x1b[{scr_height}B\x1b[0GInput: ".encode("utf-8"))
     if safe_flush(cf) != 0:
         return
 
     conn.setblocking(False)
     buf = b""
+    msglist = []
     while True:
         if not user.msg_queue.empty():
             msg = user.msg_queue.get()
-            cf.write(msg.encode("utf-8"))
+            msglist.append(msg)
+            msglist = msglist[::-1][:scr_height-2][::-1]
+            scr_buf = ""
+
+            # clear
+            scr_buf +=  "\x1b[s"
+            scr_buf += f"\x1b[{scr_height}A"
+            for i in range(scr_height-1):
+                scr_buf += f"\x1b[{i};0H\x1b[2K"
+            scr_buf +=  "\x1b[u"
+
+            # messages 
+            scr_buf +=  "\x1b[s"
+            scr_buf += f"\x1b[{scr_height}A"
+            for msg in msglist:
+                scr_buf += f"\x1b[0G{msg}\x1b[1B"
+            scr_buf += f"\x1b[u"
+
+            # messages-input border
+            scr_buf +=  "\x1b[s"
+            scr_buf +=  "\x1b[1A\x1b[0G\x1b[2K"
+            scr_buf +=  "#"*scr_width
+            scr_buf +=  "\x1b[u"
+
+            cf.write(scr_buf.encode("utf-8"))
             if safe_flush(cf) != 0:
                 break
 
@@ -184,6 +210,14 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
 
         buf += b
         if b"\n" in buf:
+            cf.write((
+                f"\x1b[{scr_height}B"
+            +    "\x1b[1A\x1b[2K\x1b[1B"
+            +    "\x1b[2K\x1b[0GInput: "
+            ).encode("utf-8"))
+            if safe_flush(cf) != 0:
+                break
+
             success = True
             buf = buf[:-1] # remove trailing newline
             for byte in buf:
@@ -191,7 +225,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
                     userlist.sendall(
                         f"[SERVER]: {user.name} tried to send "
                     +   f"disallowed byte '{hex(byte)}' but "
-                    +    "i blocked it! >:D\n"
+                    +    "i blocked it! >:D"
                     )
                     buf = b""
                     success = False
@@ -202,12 +236,12 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
             msg = buf.decode("utf-8")
             msg = msg[:options.max_msg_len]
             userlist.sendall(
-                f"{user.name}: {msg}\n"
+                f"{user.name}: {msg}"
             )
             buf = b""
 
     userlist.sendall(
-        f"[SERVER]: {user.name} left. bye. :c\n"
+        f"[SERVER]: {user.name} left. bye. :c"
     )
     if options.debug:
         print(f"removed user {user.name} from userlist")
