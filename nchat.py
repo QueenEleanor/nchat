@@ -64,6 +64,13 @@ userlist = Userlist()
 ALLOWED_USERNAME_CHARS = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_."
 ALLOWED_MSG_CHARS      = r"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~ ".encode("utf-8")
 
+C_SAVE      = "\x1b[s"
+C_RESTORE   = "\x1b[u"
+C_GOTO_C0   = "\x1b[0G"
+C_GOTO_C0L0 = "\x1b[H"
+CLEAR_SCR   = "\x1b[2J"
+CLEAR_LINE  = "\x1b[2K"
+
 CLAIMED_USERNAMES = ["[SERVER]"]
 
 
@@ -129,7 +136,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     scr_height, scr_width = out[0]
     scr_height, scr_width = int(scr_height), int(scr_width)
 
-    cf.write(b"\x1b[2J\x1b[H")
+    cf.write(f"{CLEAR_SCR}{C_GOTO_C0L0}".encode("utf-8"))
     if options.welcome_msg:
         cf.write(options.welcome_msg.encode("utf-8") + b"\n")
     if safe_flush(cf) != 0:
@@ -163,8 +170,10 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
         f"[SERVER]: {user.name} joined! Welcome! :D"
     )
 
-    cf.write(b"\x1b[2J\x1b[H")
-    cf.write(f"\x1b[{scr_height}B\x1b[0GInput: ".encode("utf-8"))
+    cf.write((
+        f"{CLEAR_SCR}\x1b[{scr_height}B"
+    +   f"Input: "
+    ).encode("utf-8"))
     if safe_flush(cf) != 0:
         return
 
@@ -179,24 +188,25 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
             scr_buf = ""
 
             # clear
-            scr_buf +=  "\x1b[s"
+            scr_buf += C_SAVE
             scr_buf += f"\x1b[{scr_height}A"
             for i in range(scr_height-1):
-                scr_buf += f"\x1b[{i};0H\x1b[2K"
-            scr_buf +=  "\x1b[u"
+                scr_buf += f"\x1b[{i};0H{CLEAR_LINE}"
+            scr_buf += C_RESTORE
 
             # messages 
-            scr_buf +=  "\x1b[s"
+            scr_buf += C_SAVE
             scr_buf += f"\x1b[{scr_height}A"
             for msg in msglist:
-                scr_buf += f"\x1b[0G{msg}\x1b[1B"
-            scr_buf += f"\x1b[u"
+                scr_buf += f"{C_GOTO_C0}{msg}\x1b[1B"
+            scr_buf += C_RESTORE
 
             # messages-input border
-            scr_buf +=  "\x1b[s"
-            scr_buf +=  "\x1b[1A\x1b[0G\x1b[2K"
-            scr_buf +=  "#"*scr_width
-            scr_buf +=  "\x1b[u"
+            scr_buf += C_SAVE
+            scr_buf += "\x1b[1A"
+            scr_buf += f"{CLEAR_LINE}{C_GOTO_C0}"
+            scr_buf += "#" * scr_width
+            scr_buf += C_RESTORE
 
             cf.write(scr_buf.encode("utf-8"))
             if safe_flush(cf) != 0:
@@ -212,8 +222,8 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
         if b"\n" in buf:
             cf.write((
                 f"\x1b[{scr_height}B"
-            +    "\x1b[1A\x1b[2K\x1b[1B"
-            +    "\x1b[2K\x1b[0GInput: "
+            +   f"\x1b[1A{CLEAR_LINE}\x1b[1B"
+            +   f"{CLEAR_LINE}{C_GOTO_C0}Input: "
             ).encode("utf-8"))
             if safe_flush(cf) != 0:
                 break
