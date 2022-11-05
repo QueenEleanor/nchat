@@ -123,25 +123,25 @@ def validate_username(username: bytes) -> tuple[bool, str]:
 def gen_ui(msglist: list[str], scr_height: int, scr_width: int) -> str:
     buf = ""
 
-    # clear
+    # init
     buf += C_SAVE
-    buf += f"\x1b[{scr_height}A"
+
+    # clear
+    buf += f"\x1b[0;0H"
     for i in range(scr_height-1):
         buf += f"\x1b[{i};0H{CLEAR_LINE}"
-    buf += C_RESTORE
 
     # messages 
-    buf += C_SAVE
-    buf += f"\x1b[{scr_height}A"
+    buf += f"\x1b[0;0H"
     for msg in msglist:
         buf += f"{C_GOTO_C0}{msg}\x1b[1B"
-    buf += C_RESTORE
 
     # messages-input border
-    buf += C_SAVE
-    buf += "\x1b[1A"
+    buf += f"\x1b[{scr_height-1};0H"
     buf += f"{CLEAR_LINE}{C_GOTO_C0}"
     buf += "#" * scr_width
+
+    # deinit
     buf += C_RESTORE
     
     return buf
