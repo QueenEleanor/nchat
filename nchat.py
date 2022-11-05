@@ -3,6 +3,7 @@ from io import BufferedRWPair
 from socket import socket, AF_INET, SOCK_STREAM
 import threading
 import queue
+import time
 import argparse
 import re
 
@@ -244,6 +245,9 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
         if b == b"": # EOF
             break
         if b is None:
+            # Gives time for the CPU to execute other code
+            # resulting in a lot lower total CPU usage
+            time.sleep(0.1)
             continue
 
         buf += b
