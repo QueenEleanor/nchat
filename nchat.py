@@ -58,6 +58,7 @@ class options:
     max_username_len : int
     max_msg_len : int
 
+
 userlist = Userlist()
 
 
@@ -118,29 +119,71 @@ def validate_username(username: bytes) -> tuple[bool, str]:
     return (True, "")
 
 
-def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
-    cf.write(
-        b"Press enter to continue. [DO NOT INSERT OR REMOVE TEXT]"
-    +   b"\x1b[9999;9999H[\x1b[6n"
-    )
+def gen_ui(msglist: list[str], scr_height: int, scr_width: int) -> str:
+    buf = ""
+
+    # clear
+    buf += C_SAVE
+    buf += f"\x1b[{scr_height}A"
+    for i in range(scr_height-1):
+        buf += f"\x1b[{i};0H{CLEAR_LINE}"
+    buf += C_RESTORE
+
+    # messages 
+    buf += C_SAVE
+    buf += f"\x1b[{scr_height}A"
+    for msg in msglist:
+        buf += f"{C_GOTO_C0}{msg}\x1b[1B"
+    buf += C_RESTORE
+
+    # messages-input border
+    buf += C_SAVE
+    buf += "\x1b[1A"
+    buf += f"{CLEAR_LINE}{C_GOTO_C0}"
+    buf += "#" * scr_width
+    buf += C_RESTORE
+    
+    return buf
+
+
+def get_scr_size(cf: BufferedRWPair) -> tuple[int, int]:
+    cf.write((
+        f"{CLEAR_SCR}{C_GOTO_C0L0}\n\n" 
+    +    "Press enter to continue. [DO NOT INSERT OR REMOVE TEXT]"
+    +    "\x1b[9999;9999H[\x1b[6n"
+    ).encode("utf-8"))
     if safe_flush(cf) != 0:
-        return
+        return (-1, -1) # error, flush
     
     buf = readuntil(cf, b"\n")
     if buf == b"EOF":
-        return
+        return (-1, -2) # error, eof
 
     out = re.findall(b"\x1b\\[(\\d+);(\\d+)R", buf)
     if len(out) != 1:
-        return
+        return (-1, -3) # error, invalid input
+
+    cf.write((
+        f"{CLEAR_SCR}{C_GOTO_C0L0}"
+    ).encode("utf-8"))
+    if safe_flush(cf) != 0:
+        return (-1, -1) # error, flush
+
     scr_height, scr_width = out[0]
     scr_height, scr_width = int(scr_height), int(scr_width)
 
+    return (scr_height, scr_width)
+    
+
+def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     cf.write(f"{CLEAR_SCR}{C_GOTO_C0L0}".encode("utf-8"))
-    if options.welcome_msg:
-        cf.write(options.welcome_msg.encode("utf-8") + b"\n")
     if safe_flush(cf) != 0:
         return
+
+    if options.welcome_msg:
+        cf.write(options.welcome_msg.encode("utf-8") + b"\n")
+        if safe_flush(cf) != 0:
+            return
 
     while True:
         cf.write(b"Session username: ")
@@ -160,6 +203,11 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
             continue
         break
     username = buf.decode("utf-8")
+
+    out = get_scr_size(cf)
+    if out[0] == -1:
+        return
+    scr_height, scr_width = out
 
     userlist.add(username)
     user = userlist.get(username)
@@ -185,30 +233,10 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
             msg = user.msg_queue.get()
             msglist.append(msg)
             msglist = msglist[::-1][:scr_height-2][::-1]
-            scr_buf = ""
 
-            # clear
-            scr_buf += C_SAVE
-            scr_buf += f"\x1b[{scr_height}A"
-            for i in range(scr_height-1):
-                scr_buf += f"\x1b[{i};0H{CLEAR_LINE}"
-            scr_buf += C_RESTORE
+            ui = gen_ui(msglist, scr_height, scr_width)
 
-            # messages 
-            scr_buf += C_SAVE
-            scr_buf += f"\x1b[{scr_height}A"
-            for msg in msglist:
-                scr_buf += f"{C_GOTO_C0}{msg}\x1b[1B"
-            scr_buf += C_RESTORE
-
-            # messages-input border
-            scr_buf += C_SAVE
-            scr_buf += "\x1b[1A"
-            scr_buf += f"{CLEAR_LINE}{C_GOTO_C0}"
-            scr_buf += "#" * scr_width
-            scr_buf += C_RESTORE
-
-            cf.write(scr_buf.encode("utf-8"))
+            cf.write(ui.encode("utf-8"))
             if safe_flush(cf) != 0:
                 break
 
@@ -220,11 +248,9 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
 
         buf += b
         if b"\n" in buf:
-            cf.write((
-                f"\x1b[{scr_height}B"
-            +   f"\x1b[1A{CLEAR_LINE}\x1b[1B"
-            +   f"{CLEAR_LINE}{C_GOTO_C0}Input: "
-            ).encode("utf-8"))
+            # this fucks shit up but it 
+            # gets fixed on next sent message
+            cf.write((f"{CLEAR_LINE}{C_GOTO_C0}Input: ").encode("utf-8"))
             if safe_flush(cf) != 0:
                 break
 
