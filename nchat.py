@@ -27,10 +27,11 @@ class Screen:
 
     def set_size(self, cf: BufferedRWPair) -> int:
         cf.write((
-            f"{CLEAR_SCR}{C_GOTO_C0L0}\n\n" 
-        +    "Press enter to continue. [DO NOT INSERT OR REMOVE TEXT]"
-        +    "\x1b[9999;9999H[\x1b[6n"
-        ).encode("utf-8"))
+           f"{CLEAR_SCR}{C_GOTO_C0L0}\n\n" 
+        +   "Press enter to continue. [DO NOT INSERT OR REMOVE TEXT]"
+        +   "\x1b[9999;9999H[\x1b[6n"
+            ).encode("utf-8")
+        )
         if safe_flush(cf) != 0:
             return -1
     
@@ -43,8 +44,9 @@ class Screen:
             return -3
 
         cf.write((
-            f"{CLEAR_SCR}{C_GOTO_C0L0}"
-        ).encode("utf-8"))
+           f"{CLEAR_SCR}{C_GOTO_C0L0}"
+            ).encode("utf-8")
+        )
         if safe_flush(cf) != 0:
             return -1
 
@@ -183,12 +185,19 @@ def validate_username(username: bytes) -> tuple[bool, str]:
 
 
 def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
-    cf.write(f"{CLEAR_SCR}{C_GOTO_C0L0}".encode("utf-8"))
+    cf.write((
+       f"{CLEAR_SCR}{C_GOTO_C0L0}"
+        ).encode("utf-8")
+    )
     if safe_flush(cf) != 0:
         return
 
     if options.welcome_msg:
-        cf.write(options.welcome_msg.encode("utf-8") + b"\n")
+        cf.write((
+           f"{options.welcome_msg}"
+        +   "\n"
+            ).encode("utf-8")
+        )
         if safe_flush(cf) != 0:
             return
 
@@ -224,9 +233,10 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     )
 
     cf.write((
-        f"{CLEAR_SCR}\x1b[{user.scr.height}B"
-    +   f"Input: "
-    ).encode("utf-8"))
+       f"{CLEAR_SCR}\x1b[{user.scr.height}B"
+    +  f"Input: "
+        ).encode("utf-8")
+    )
     if safe_flush(cf) != 0:
         return
 
@@ -258,7 +268,10 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
         if b"\n" in buf:
             # this fucks shit up but it 
             # gets fixed on next sent message
-            cf.write((f"{CLEAR_LINE}{C_GOTO_C0}Input: ").encode("utf-8"))
+            cf.write((
+               f"{CLEAR_LINE}{C_GOTO_C0}Input: "
+                ).encode("utf-8")
+            )
             if safe_flush(cf) != 0:
                 break
 
