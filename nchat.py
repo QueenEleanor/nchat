@@ -1,8 +1,8 @@
 #!/bin/python3
 from io import BufferedRWPair
 from socket import socket, AF_INET, SOCK_STREAM
+from queue import Queue
 import threading
-import queue
 import time
 import argparse
 import re
@@ -24,6 +24,10 @@ CLAIMED_USERNAMES = ["[SERVER]"]
 class Screen:
     height: int
     width: int
+    msglist: list[str]
+
+    def __init__(self):
+        self.msglist = []
 
     def set_size(self, cf: BufferedRWPair) -> int:
         cf.write((
@@ -35,7 +39,7 @@ class Screen:
         if safe_flush(cf) != 0:
             return -1
     
-        buf = readuntil(cf, b"\n")
+        buf = readline(cf)
         if buf == b"EOF":
             return -2
 
@@ -56,7 +60,7 @@ class Screen:
 
         return 0
 
-    def gen(self, msglist: list[str]) -> str:
+    def generate(self) -> str:
         buf = ""
 
         # init
@@ -69,7 +73,7 @@ class Screen:
 
         # messages 
         buf += f"\x1b[0;0H"
-        for msg in msglist:
+        for msg in self.msglist:
             buf += f"{C_GOTO_C0}{msg}\x1b[1B"
 
         # messages-input border
@@ -85,17 +89,17 @@ class Screen:
 
 class User:
     name: str
-    msg_queue: queue.Queue
-    scr: Screen
+    msg_queue: Queue
+    screen: Screen
 
     def __init__(self, username: str):
         self.name      = username
-        self.msg_queue = queue.Queue()
-        self.scr       = Screen()
+        self.msg_queue = Queue()
+        self.screen    = Screen()
 
 
 class Userlist:
-    users: list
+    users: list[User]
 
     def __init__(self):
         self.users = []
@@ -148,7 +152,7 @@ def safe_flush(cf: BufferedRWPair) -> int:
     return 0
 
 
-def readuntil(cf: BufferedRWPair, end: bytes) -> bytes:
+def readline(cf: BufferedRWPair) -> bytes:
     buf = b""
     while True:
         b = cf.read(1)
@@ -157,7 +161,7 @@ def readuntil(cf: BufferedRWPair, end: bytes) -> bytes:
             return b"EOF"
         
         buf += b
-        if end in buf:
+        if b == b"\n":
             return buf
 
 
@@ -194,8 +198,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
 
     if options.welcome_msg:
         cf.write((
-           f"{options.welcome_msg}"
-        +   "\n"
+           f"{options.welcome_msg}\n"
             ).encode("utf-8")
         )
         if safe_flush(cf) != 0:
@@ -206,24 +209,24 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
         if safe_flush(cf) != 0:
             return
 
-        buf = readuntil(cf, b"\n")
+        buf = readline(cf)
         if buf == b"EOF":
             return
 
         buf = buf[:-1] # remove trailing newline
         success, err = validate_username(buf)
-        if not success:
+        if success:
+            break
+        else:
             cf.write(err.encode("utf-8"))
             if safe_flush(cf) != 0:
                 return
-            continue
-        break
     username = buf.decode("utf-8")
 
     userlist.add(username)
     user = userlist.get(username)
 
-    if user.scr.set_size(cf) != 0:
+    if user.screen.set_size(cf) != 0:
         return
 
     if options.debug:
@@ -233,7 +236,7 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
     )
 
     cf.write((
-       f"{CLEAR_SCR}\x1b[{user.scr.height}B"
+       f"{CLEAR_SCR}\x1b[{user.screen.height}B"
     +  f"Input: "
         ).encode("utf-8")
     )
@@ -242,14 +245,12 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
 
     conn.setblocking(False)
     buf = b""
-    msglist = []
     while True:
         if not user.msg_queue.empty():
             msg = user.msg_queue.get()
-            msglist.append(msg)
-            msglist = msglist[::-1][:user.scr.height - 2][::-1]
+            user.screen.msglist.append(msg)
 
-            ui = user.scr.gen(msglist)
+            ui = user.screen.generate()
 
             cf.write(ui.encode("utf-8"))
             if safe_flush(cf) != 0:
@@ -280,9 +281,9 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
             for byte in buf:
                 if byte not in ALLOWED_MSG_CHARS:
                     userlist.sendall(
-                        f"[SERVER]: {user.name} tried to send "
-                    +   f"disallowed byte '{hex(byte)}' but "
-                    +    "i blocked it! >:D"
+                       f"[SERVER]: {user.name} tried to send "
+                    +  f"disallowed byte '{hex(byte)}' but "
+                    +   "i blocked it! >:D"
                     )
                     buf = b""
                     success = False            
@@ -291,17 +292,14 @@ def conn_handler(conn: socket, cf: BufferedRWPair) -> None:
 
             msg = buf.decode("utf-8")
 
-            if msg.startswith("/"):
-                continue
-
             msg = msg[:options.max_msg_len]
             userlist.sendall(
-                f"{user.name}: {msg}"
+               f"{user.name}: {msg}"
             )
             buf = b""
 
     userlist.sendall(
-        f"[SERVER]: {user.name} left. bye. :c"
+       f"[SERVER]: {user.name} left. bye. :c"
     )
     if options.debug:
         print(f"removed user {user.name} from userlist")
@@ -360,8 +358,11 @@ def parse_args():
         type=int,
         default=256,
     )
+
     args = parser.parse_args()
 
+    # Why am I assigning the values this way? I have no idea
+    # It looks satisfying though
     options.port             = args.port
     options.debug            = args.debug
     options.welcome_msg      = args.welcome_message
